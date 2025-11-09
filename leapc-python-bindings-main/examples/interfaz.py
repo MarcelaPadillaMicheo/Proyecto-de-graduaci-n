@@ -320,7 +320,7 @@ def mostrar_instruccion_simple(nombre_robot, script, imagen_archivo):
 # DICCIONARIO DE ROBOTS DISPONIBLES
 # --------------------------------------------------------------
 robots = {
-    "Mano animatrónica": ("animatronica_no_buffer.py",  "mano_animatronica.png"),
+    "Mano animatrónica": ("animatronica.py",  "mano_animatronica.png"),
     "Pololu":            ("pololu_fisico.py",           "pololu.png"),
     "Mano Simulada":     ("mano_simulacion_matlab.py",  "simulacion_mano.png"),
     "Robot Sawyer":      ("sawyer_simulacion.py",       "max_arm_simulacion.png"),
@@ -354,3 +354,4 @@ def abrir_subpantalla_robot(nombre_robot, script):
 signal.signal(signal.SIGINT, lambda sig, frame: cerrar_aplicacion())
 crear_pantalla_principal()
 ventana.mainloop()
+
