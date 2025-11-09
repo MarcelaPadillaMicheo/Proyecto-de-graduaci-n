@@ -1,74 +1,99 @@
-# control_pololu_leap.py
+# ==============================================================
+# Programa desarrollado por Marcela Padilla
+# Control del robot Pololu 3Pi+ mediante gestos con Leap Motion
+# ==============================================================
+# Este script conecta el sensor Leap Motion (SDK Gemini v5) con el 
+# robot Pololu 3Pi+ para permitir el control directo del movimiento 
+# a través de gestos de la mano.
+#
+# La mano derecha controla el desplazamiento (avanzar, retroceder, girar), 
+# mientras que la mano izquierda abierta actúa como freno de emergencia.
+# Los comandos se envían en tiempo real al Pololu mediante conexión TCP 
+# utilizando la clase Pololu3Pi.
+#
+# Reglas de control principales:
+#   - “abierta”              → avanzar recto
+#   - “abierta derecha”      → avanzar con giro a la derecha
+#   - “abierta izquierda”    → avanzar con giro a la izquierda
+#   - “cerrada”              → retroceder recto
+#   - “cerrada derecha”      → retroceder girando a la derecha
+#   - “cerrada izquierda”    → retroceder girando a la izquierda
+#   - “parar”                → frenar completamente
+# ==============================================================
+
 import sys, os, time
 import numpy as np
 
-# === Importa tu clase desde tu archivo ===
-# Asegúrate que robot_example.py está en el mismo folder o en el PYTHONPATH
+# --------------------------------------------------------------
+# IMPORTACIÓN DE LA CLASE DEL ROBOT
+# --------------------------------------------------------------
+# Asegúrate de que Pololu3Pi esté disponible en el mismo directorio o PYTHONPATH
 from robot_example import Pololu3Pi
 
-# === Leap Motion (Gemini v5) ===
+# --------------------------------------------------------------
+# CONFIGURACIÓN DE LEAP MOTION (Gemini v5)
+# --------------------------------------------------------------
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'leapc-python-api', 'src')))
 from leap import connection, events, enums
 
-# ========= Configuración del robot =========
+# --------------------------------------------------------------
+# CONFIGURACIÓN DEL ROBOT
+# --------------------------------------------------------------
 USE_IP = True
 ROBOT_ID = 15
 ROBOT_IP = "192.168.50.115"
 
-BASE_RPM = 70.0       # velocidad base (ajusta a gusto)
-DELTA_TURN = 40.0     # diferencia para girar (ajusta a gusto)
-KEEPALIVE_S = 0.25    # re-envío periódico para “mantener” el comando
+BASE_RPM = 70.0       # Velocidad base (ajustable)
+DELTA_TURN = 40.0     # Diferencia de velocidad para giros
+KEEPALIVE_S = 0.25    # Tiempo máximo entre comandos consecutivos
 
-# ========= Utilidades =========
+# --------------------------------------------------------------
+# FUNCIONES AUXILIARES
+# --------------------------------------------------------------
 def distancia(v1, v2):
+    """Calcula la distancia euclidiana entre dos puntos 3D del Leap Motion."""
     return np.linalg.norm([v1.x - v2.x, v1.y - v2.y, v1.z - v2.z])
 
 def clamp_rpm(v):
-    # límites se vuelven a chequear dentro de Pololu3Pi, esto es por seguridad
+    """Limita el valor de RPM dentro del rango [-999, 999] como seguridad."""
     return float(max(-999.0, min(999.0, v)))
 
-# ========= Mapeo gesto → velocidades =========
+# --------------------------------------------------------------
+# MAPEOS DE GESTOS A VELOCIDADES DE RUEDA
+# --------------------------------------------------------------
 def gesture_to_rpms(gesto: str):
     """
-    Reglas (según tu póster):
-      - 'abierta'              → avanzar recto
-      - 'abierta derecha'      → avanzar con giro a la derecha
-      - 'abierta izquierda'    → avanzar con giro a la izquierda
-      - 'cerrada'              → retroceder recto
-      - 'cerrada derecha'      → retroceder con giro a la derecha
-      - 'cerrada izquierda'    → retroceder con giro a la izquierda
-      - 'parar'                → frenar
+    Convierte el gesto reconocido en velocidades de rueda (izquierda, derecha).
     """
     g = gesto.strip().lower()
 
     if g == "parar":
         return 0.0, 0.0
 
-    # Avanzar (mano derecha abierta)
+    # Avance
     if g == "abierta":
         return BASE_RPM, BASE_RPM
     if g == "abierta derecha":
-        # Giro a la derecha: rueda derecha más lenta
         return clamp_rpm(BASE_RPM), clamp_rpm(BASE_RPM - DELTA_TURN)
     if g == "abierta izquierda":
-        # Giro a la izquierda: rueda izquierda más lenta
         return clamp_rpm(BASE_RPM - DELTA_TURN), clamp_rpm(BASE_RPM)
 
-    # Retroceder (mano derecha cerrada)
+    # Retroceso
     if g == "cerrada":
         return -BASE_RPM, -BASE_RPM
     if g == "cerrada derecha":
-        # Retrocediendo y girando a la derecha: rueda derecha más lenta (en retroceso)
         return clamp_rpm(-BASE_RPM), clamp_rpm(-(BASE_RPM - DELTA_TURN))
     if g == "cerrada izquierda":
-        # Retrocediendo y girando a la izquierda
         return clamp_rpm(-(BASE_RPM - DELTA_TURN)), clamp_rpm(-BASE_RPM)
 
-    # Gesto desconocido → mantener (None) o frenar. Aquí opto por frenar suave:
+    # Gesto no reconocido → detener suavemente
     return 0.0, 0.0
 
-# ========= Listener de gestos que comanda al robot =========
+# --------------------------------------------------------------
+# CLASE PRINCIPAL: CONEXIÓN LEAP MOTION → POLOLU
+# --------------------------------------------------------------
 class GestureToRobot:
+    """Traduce los gestos detectados por Leap Motion en comandos para el Pololu."""
     def __init__(self, robot: Pololu3Pi, max_hz=30, keepalive_s=KEEPALIVE_S):
         self.robot = robot
         self.dt_min = 1.0 / max_hz
@@ -94,7 +119,6 @@ class GestureToRobot:
             self.last_send_t = now
             self.last_gesture = gesto
 
-            # imprime máx 1 vez por segundo
             if (now - self.last_print_t) >= 1.0:
                 print(f"Gesto='{gesto:>17}'  cmd=({L:.1f}, {R:.1f}) rpm")
                 self.last_print_t = now
@@ -113,12 +137,10 @@ class GestureToRobot:
                     promedio = float(np.mean(distancias))
 
                     if hand.type == enums.HandType.Left:
-                        # FRENAR: mano izquierda abierta
                         if promedio > 70:
                             mano_izquierda_abierta = True
 
                     elif hand.type == enums.HandType.Right:
-                        # Clasificación abierta/cerrada por apertura de dedos
                         if promedio > 70:
                             gesto = "abierta"
                         elif promedio < 40:
@@ -126,8 +148,6 @@ class GestureToRobot:
                         else:
                             gesto = "desconocida"
 
-                        # Dirección por giro de la palma (±x del normal)
-                        # umbral 0.6 ≈ palma claramente girada
                         if abs(normal.x) > 0.6:
                             gesto += " izquierda" if normal.x > 0 else " derecha"
 
@@ -142,30 +162,31 @@ class GestureToRobot:
                 print("Conexión establecida con Leap Motion")
 
         except Exception as e:
-            # seguridad: si algo falla, frenamos
             print(f"[WARN] Excepción en on_event: {e}. Enviando STOP.")
             try:
                 self.robot.force_stop()
             except Exception:
                 pass
 
-# ========= Main =========
+# --------------------------------------------------------------
+# FUNCIÓN PRINCIPAL
+# --------------------------------------------------------------
 def main():
-    # Conecta al Pololu
+    # Conectar al robot Pololu 3Pi+
     bot = Pololu3Pi()
     if USE_IP:
         print(f"Conectando por IP a {ROBOT_IP} ...")
         bot.connect(ip=ROBOT_IP)
     else:
         print(f"Conectando por ID a {ROBOT_ID} ...")
-        bot.connect(rob_id=ROBOT_ID)  # ajusta el nombre del argumento si tu API usa otro
+        bot.connect(agent_id=ROBOT_ID)
 
-    # Listener de Leap Motion
+    # Inicializa Leap Motion
     conn = connection.Connection()
     listener = GestureToRobot(bot, max_hz=30, keepalive_s=KEEPALIVE_S)
     conn.add_listener(listener)
 
-    # Bucle
+    # Bucle de operación principal
     with conn.open():
         print("Reconociendo gestos... (Ctrl+C para salir)")
         try:
@@ -174,13 +195,17 @@ def main():
         except KeyboardInterrupt:
             pass
         finally:
-            # STOP y desconexión segura
             try:
                 bot.force_stop()
             except Exception:
                 pass
             bot.disconnect()
-            print("Finalizado y robot detenido.")
+            print("Finalizado y robot detenido correctamente.")
 
+# --------------------------------------------------------------
+# EJECUCIÓN DIRECTA
+# --------------------------------------------------------------
 if __name__ == "__main__":
     main()
+
+
