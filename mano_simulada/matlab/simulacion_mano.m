@@ -1,36 +1,51 @@
+% ==============================================================
+% Programa desarrollado por Marcela Padilla
+% Mano simulada 3D que replica los movimientos de la mano real
+% ==============================================================
+% Este script visualiza una mano simulada en 3D que responde en tiempo real
+% a los gestos y orientaciones detectados por el sensor Leap Motion.
+% La comunicación se realiza mediante UDP, recibiendo comandos desde Python.
+% Los gestos controlan la apertura de los dedos y la orientación de la palma
+% (rotación en roll y pitch). Incluye representación de palma, antebrazo y dedos.
+% ==============================================================
+
 clc; clear; close all;
 
-% === CONFIGURACIÓN DE UDP ===
+% --------------------------------------------------------------
+% CONFIGURACIÓN DE UDP
+% --------------------------------------------------------------
 u = udpport("datagram", "IPV4", "LocalPort", 50010);
 disp("Esperando gestos desde Leap Motion...");
 
-% === FIGURA Y ESCENA (pantalla completa real + fondo negro) ===
+% --------------------------------------------------------------
+% FIGURA Y ESCENA (pantalla completa + fondo negro)
+% --------------------------------------------------------------
 fig = figure( ...
     'Color','w', ...
     'MenuBar','none', ...
     'ToolBar','none', ...
     'NumberTitle','off', ...
     'Name','Mano 3D', ...
-    'WindowState','fullscreen');   % Cubre también la barra de Windows
+    'WindowState','fullscreen');   % Cubre toda la pantalla, incluyendo barra superior
 
-% Callback de cierre para asegurar limpieza
+% Callback de cierre seguro
 fig.CloseRequestFcn = @(~,~) cerrar(fig,u);
 
-% Axes ocupando toda el área
+% Configuración de los ejes
 ax  = axes('Parent', fig, 'Units','normalized', 'Position',[0 0 1 1]);
-set(ax, 'Color', 'k');      % Fondo negro en el área de ejes
-
+set(ax, 'Color', 'k');
 view(ax, 100, 0);
 axis(ax, [-100 100 -100 100 -150 100]);
 axis(ax, 'manual');
 axis(ax, 'off');
 
+% Iluminación y material de la escena
 light(ax); 
 camlight(ax, 'headlight'); 
 lighting gouraud;
 material dull
 
-% Bloquear interacción con la cámara + fijar cámara/zoom
+% Bloqueo de la interacción con cámara y zoom
 set(fig, 'WindowScrollWheelFcn','', ...
          'WindowButtonDownFcn','', ...
          'WindowButtonMotionFcn','', ...
@@ -41,25 +56,29 @@ set(ax, 'CameraPositionMode','manual', ...
         'CameraViewAngleMode','manual');
 camva(ax, 'manual');
 
-% === BOTÓN "salir" (abajo a la derecha) ===
+% --------------------------------------------------------------
+% BOTÓN "Salir" (esquina inferior derecha)
+% --------------------------------------------------------------
 uicontrol('Style','pushbutton', ...
           'Parent', fig, ...
           'String','salir', ...
           'Units','normalized', ...
-          'Position',[0.93 0.02 0.06 0.05], ...   % pequeño y abajo-derecha
+          'Position',[0.93 0.02 0.06 0.05], ...
           'BackgroundColor',[0.15 0.15 0.15], ...
           'ForegroundColor',[1 1 1], ...
           'FontSize',10, ...
           'Callback', @(~,~) cerrar(fig,u) );
 
-% === PARÁMETROS VISUALES ===
+% --------------------------------------------------------------
+% PARÁMETROS VISUALES DE LA MANO
+% --------------------------------------------------------------
 color_palma   = [0 1 1];
 color_falange = [1 1 1];
 color_punta   = [0 1 1];
 facealpha     = 1;
 w = 10; h = 10;
 
-% [prox, med, dist] por dedo (pulgar->meñique)
+% Longitud de las tres falanges por dedo (pulgar a meñique)
 l_falanges = [
     25 20 15;  % pulgar
     30 25 20;  % índice
@@ -67,7 +86,7 @@ l_falanges = [
     30 25 20;  % anular
     27 20 12]; % meñique
 
-% offsets XY en la palma (pulgar->meñique)
+% Posiciones base de los dedos sobre la palma
 finger_offsets = [
     -35, -5;   % pulgar
     -22,  0;   % índice
@@ -75,11 +94,13 @@ finger_offsets = [
      12,  0;   % anular
      26, -5];  % meñique
 
-% Yaw natural del pulgar
+% Orientación natural del pulgar
 pulgar_yaw  = deg2rad(0);
 pulgar_lean = deg2rad(-15);
 
-% === PALMA Y ANTEBRAZO ===
+% --------------------------------------------------------------
+% MODELADO DE LA PALMA Y ANTEBRAZO
+% --------------------------------------------------------------
 palma = hgtransform('Parent', ax);
 drawCuboid([60, 15, 50], [0, 10, -20], color_palma, facealpha, palma);
 
@@ -99,18 +120,20 @@ fill3(x_circ, y_circ, -120*ones(size(x_circ)), color_palma, ...
 fill3(x_circ, y_circ, -45 *ones(size(x_circ)), color_palma, ...
       'FaceAlpha',facealpha, 'EdgeColor','none','Parent',antebrazo);
 
-% === CREAR DEDOS ===
+% --------------------------------------------------------------
+% CREACIÓN DE LOS DEDOS Y SU ESTRUCTURA
+% --------------------------------------------------------------
 num_dedos = 5;
 prox = gobjects(num_dedos,1);
 med  = gobjects(num_dedos,1);
 dist = gobjects(num_dedos,1);
 puntas = gobjects(num_dedos,1);
 
-% Estados y objetivos (INICIA ABIERTA)
+% Estados y ángulos (inicia abierta)
 ang_actual = zeros(1,5);
 ang_obj    = zeros(1,5);
 
-% mapeo nombres -> índice
+% Mapeo de nombres de dedos a índices
 nombres = ["pulgar","indice","medio","anular","menique"];
 idx = struct('pulgar',1,'indice',2,'medio',3,'anular',4,'menique',5);
 
@@ -128,17 +151,21 @@ for i = 1:num_dedos
         base.Matrix = makehgtform('translate',[offset(1), offset(2)+5, 20]);
     end
 
+    % Falange proximal
     prox(i) = hgtransform('Parent', base);
     drawCuboid([w,h,lf(1)], [0,0,0], color_falange, facealpha, prox(i));
 
+    % Falange media
     med(i) = hgtransform('Parent', prox(i));
     drawCuboid([w,h,lf(2)], [0,0,0], color_falange, facealpha, med(i));
     med(i).Matrix = makehgtform('translate',[0 0 lf(1)]);
 
+    % Falange distal
     dist(i) = hgtransform('Parent', med(i));
     drawCuboid([w,h,lf(3)], [0,0,0], color_falange, facealpha, dist(i));
     dist(i).Matrix = makehgtform('translate',[0 0 lf(2)]);
 
+    % Punta del dedo (esfera)
     puntas(i) = hgtransform('Parent', dist(i));
     [xs,ys,zs] = sphere(10);
     r_tip = w/2;
@@ -146,32 +173,36 @@ for i = 1:num_dedos
          'EdgeColor','none', 'FaceAlpha',facealpha, 'Parent',puntas(i));
 end
 
-% === ANIMACIÓN EN TIEMPO REAL ===
+% --------------------------------------------------------------
+% PARÁMETROS DE ANIMACIÓN Y MOVIMIENTO
+% --------------------------------------------------------------
 roll_actual = 0;   roll_target = 0;
 pitch_actual = 0;  pitch_target = 0;
 correccion_roll = deg2rad(-30);
-alpha_smooth = 0.12;   % suavizado (0..1)
-alpha_finger = 0.14;
+alpha_smooth = 0.12;   % suavizado global (0..1)
+alpha_finger = 0.14;   % suavizado para articulaciones
 
-% límites articulares (rad)
-limit_prox = deg2rad([0 85]);   % MCPP
+% Límites articulares (radianes)
+limit_prox = deg2rad([0 85]);
 limit_med  = deg2rad([0 95]);
 limit_dist = deg2rad([0 110]);
 
+% --------------------------------------------------------------
+% BUCLE PRINCIPAL DE ANIMACIÓN
+% --------------------------------------------------------------
 while ishandle(fig)
     if u.NumDatagramsAvailable > 0
         d = read(u, 1, "string");
         msg = strtrim(d.Data);
 
-        % === GESTOS DE DEDOS ===
+        % ---- Gestos globales ----
         if contains(msg, "mano=abierta")
             ang_obj = zeros(1,5);
         elseif contains(msg, "mano=cerrada")
             ang_obj = (pi/3) * ones(1,5);
         elseif contains(msg, ":")
             % Formato: "pulgar:abierto;indice:cerrado;..."
-            tokens = regexp(msg, '(pulgar|indice|medio|anular|menique)\s*:\s*(abierto|cerrado)', ...
-                             'tokens');
+            tokens = regexp(msg, '(pulgar|indice|medio|anular|menique)\s*:\s*(abierto|cerrado)', 'tokens');
             for t = 1:numel(tokens)
                 nombre = string(tokens{t}{1});
                 estado = string(tokens{t}{2});
@@ -180,31 +211,30 @@ while ishandle(fig)
             end
         end
 
-        % === ROLL ===
+        % ---- Rotaciones de palma ----
         if contains(msg, "izquierda")
             roll_target = deg2rad(30);
         elseif contains(msg, "derecha")
             roll_target = deg2rad(-30);
         elseif contains(msg, "centro")
-            roll_target = 0;   % centro resetea roll...
+            roll_target = 0;
         end
 
-        % === PITCH ===
         if contains(msg, "adelante")
             pitch_target = deg2rad(-60);
         elseif contains(msg, "atras")
             pitch_target = deg2rad(40);
         elseif contains(msg, "centro")
-            pitch_target = 0;  % ...y también pitch
+            pitch_target = 0;
         end
     end
 
-    % Suavizados
+    % ---- Suavizado de movimientos ----
     roll_actual  = roll_actual  + alpha_smooth * (roll_target  - roll_actual);
     pitch_actual = pitch_actual + alpha_smooth * (pitch_target - pitch_actual);
     ang_actual   = ang_actual   + alpha_finger * (ang_obj      - ang_actual);
 
-    % Aplicar articulaciones por dedo
+    % ---- Aplicar articulaciones por dedo ----
     for i = 1:num_dedos
         lf = l_falanges(i,:);
         a0 = clamp(ang_actual(i),       limit_prox(1), limit_prox(2));
@@ -216,7 +246,7 @@ while ishandle(fig)
         dist(i).Matrix = makehgtform('translate',[0 0 lf(2)]) * makehgtform('xrotate', a2);
     end
 
-    % Orientación de la palma
+    % ---- Actualizar orientación de la palma ----
     R = makehgtform('zrotate', roll_actual + correccion_roll) * ...
         makehgtform('xrotate', pitch_actual) * ...
         makehgtform('translate', [0, 10, -20]);
@@ -225,10 +255,14 @@ while ishandle(fig)
     drawnow limitrate
 end
 
-% Limpieza adicional (por si salió del bucle con la ventana abierta)
+% --------------------------------------------------------------
+% LIMPIEZA FINAL
+% --------------------------------------------------------------
 cerrar(fig,u);
 
-% === FUNCIONES AUXILIARES ===
+% --------------------------------------------------------------
+% FUNCIONES AUXILIARES
+% --------------------------------------------------------------
 function y = clamp(x, a, b)
     y = min(max(x, a), b);
 end
@@ -237,7 +271,7 @@ function drawCuboid(dim, pos, color, alpha, parent)
     [w,h,l] = deal(dim(1), dim(2), dim(3));
     [x,y,z] = ndgrid([0 w], [0 h], [0 l]);
     V = [x(:), y(:), z(:)];
-    V = V - mean(V);   % centrar en su propio marco
+    V = V - mean(V);   % Centrar en su propio marco
     V = V + pos;
     F = [1 2 4 3; 5 6 8 7; 1 2 6 5; 2 4 8 6; 4 3 7 8; 3 1 5 7];
     patch('Faces',F,'Vertices',V,'FaceColor',color,...
@@ -245,10 +279,10 @@ function drawCuboid(dim, pos, color, alpha, parent)
 end
 
 function cerrar(fig,u)
-    % Cerrar/limpiar puerto UDP y figura de forma segura
+    % Cierra y limpia el puerto UDP y la figura de forma segura
     try
         if exist('u','var') && ~isempty(u)
-            clear u;   % liberar udpport
+            clear u;
         end
     end
     try
@@ -257,3 +291,5 @@ function cerrar(fig,u)
         end
     end
 end
+
+
