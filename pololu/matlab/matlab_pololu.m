@@ -1,28 +1,50 @@
+% ==============================================================
+% Programa desarrollado por Marcela Padilla
+% Control del robot físico Pololu 3Pi+ en MATLAB mediante UDP
+% ==============================================================
+% Este script recibe gestos en tiempo real enviados por Python a través
+% de comunicación UDP y los traduce a comandos de movimiento para el 
+% robot Pololu 3Pi+ físico. 
+% Cada gesto controla las velocidades lineal y angular del robot, 
+% permitiendo avanzar, retroceder, girar y detenerse. 
+% Además, se muestra la trayectoria recorrida del robot en tiempo real.
+% ==============================================================
+
 function pololu3pi_real_udp_visual
-    offset = 33.6573; % Usa el offset correspondiente a tu robot
+    % ----------------------------------------------------------
+    % PARÁMETROS DE CONFIGURACIÓN
+    % ----------------------------------------------------------
+    offset = 33.6573;            % Offset de orientación del robot (ajustar según calibración)
+    wheel_radius = 16;           % Radio de rueda [mm]
+    wheel_distance = 96 - 2*6.8; % Distancia entre ruedas [mm]
+    v_max = 400;                 % Velocidad máxima [rpm]
 
-    % Parámetros físicos
-    wheel_radius = 16; % mm
-    wheel_distance = 96 - 2*6.8; % mm
-    v_max = 400; % rpm
-
+    % Funciones anónimas para conversión y saturación
     rads2rpm = @(x) x * (60 / (2*pi));
     velsat = @(vel) sign(vel) * min(abs(vel), v_max);
 
-    % Parámetros del controlador
-    v = 0; w = 0;
-    v_cmd = 0.15; % prueba con más velocidad si no se mueve
-    w_cmd = 0.4;
+    % ----------------------------------------------------------
+    % PARÁMETROS DEL CONTROLADOR
+    % ----------------------------------------------------------
+    v = 0; w = 0;                % Inicialización de velocidades
+    v_cmd = 0.15;                % Velocidad lineal de referencia [m/s]
+    w_cmd = 0.4;                 % Velocidad angular de referencia [rad/s]
 
-    % UDP
+    % ----------------------------------------------------------
+    % CONFIGURACIÓN DE COMUNICACIÓN UDP
+    % ----------------------------------------------------------
     u = udpport("datagram", "IPV4", "LocalPort", 5006, "Timeout", 0.01);
     disp("Pololu físico escuchando comandos por UDP...");
 
-    % Variables para visualización
+    % ----------------------------------------------------------
+    % VARIABLES PARA VISUALIZACIÓN DE TRAYECTORIA
+    % ----------------------------------------------------------
     traj_x = [];
     traj_y = [];
 
-    % Visual
+    % ----------------------------------------------------------
+    % CONFIGURACIÓN DE FIGURA PARA MONITOREO
+    % ----------------------------------------------------------
     figure('Name', 'Trayectoria Pololu 3Pi');
     h = plot(0, 0, 'bo', 'MarkerSize', 10, 'MarkerFaceColor', 'b');
     hold on;
@@ -32,52 +54,43 @@ function pololu3pi_real_udp_visual
     ylabel('Y [mm]');
     traj = animatedline('Color', 'k', 'LineStyle', '--');
 
+    % ----------------------------------------------------------
+    % BUCLE PRINCIPAL DE EJECUCIÓN
+    % ----------------------------------------------------------
     while true
-        % Leer comandos UDP
+        % Leer gestos enviados por Python
         if u.NumDatagramsAvailable > 0
             d = read(u, 1, "string");
             gesto = strtrim(d.Data);
             disp("Gesto recibido: " + gesto);
 
+            % Mapeo de gestos a comandos de velocidad
             switch lower(gesto)
                 case "abierta"
-                    v = v_cmd; w = 0;
+                    v = v_cmd; w = 0;                   % Avanzar
                 case "cerrada"
-                    v = -v_cmd; w = 0;
+                    v = -v_cmd; w = 0;                  % Retroceder
                 case "abierta derecha"
-                    v = v_cmd; w = -w_cmd;
+                    v = v_cmd; w = -w_cmd;              % Girar derecha
                 case "abierta izquierda"
-                    v = v_cmd; w = w_cmd;
+                    v = v_cmd; w = w_cmd;               % Girar izquierda
                 case "cerrada derecha"
-                    v = -v_cmd; w = -w_cmd;
+                    v = -v_cmd; w = -w_cmd;             % Retroceder girando derecha
                 case "cerrada izquierda"
-                    v = -v_cmd; w = w_cmd;
+                    v = -v_cmd; w = w_cmd;              % Retroceder girando izquierda
                 case "parar"
-                    v = 0; w = 0;
+                    v = 0; w = 0;                       % Detenerse
             end
         end
 
-        % Conversion a velocidades de rueda
+        % ------------------------------------------------------
+        % CONVERSIÓN A VELOCIDADES DE CADA RUEDA
+        % ------------------------------------------------------
         vL = (2*v - w*(wheel_distance/1000)) / (2*(wheel_radius/1000));
         vR = (2*v + w*(wheel_distance/1000)) / (2*(wheel_radius/1000));
 
         v_left_rpm = velsat(rads2rpm(vL));
         v_right_rpm = velsat(rads2rpm(vR));
 
-        % Enviar a robot
-        robotat_3pi_set_wheel_velocities(robot, -v_right_rpm, -v_left_rpm);
+        % ------------------------------------------------------
 
-        % Leer pose del robot
-        pose = robotat_get_pose(robotat, robot_no, 'eulzyx');
-        x_mm = pose(1)*1000;
-        y_mm = pose(2)*1000;
-        theta_deg = atan2d(sind(pose(4)-offset), cosd(pose(4)-offset));
-
-        % Actualizar visual
-        set(h, 'XData', x_mm, 'YData', y_mm);
-        addpoints(traj, x_mm, y_mm);
-        drawnow;
-
-        pause(0.05);
-    end
-end
