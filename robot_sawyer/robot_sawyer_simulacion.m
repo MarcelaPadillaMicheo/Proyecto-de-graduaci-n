@@ -1,30 +1,53 @@
+% ==============================================================
+% Programa desarrollado por Marcela Padilla
+% Control del robot Sawyer mediante gestos y comunicación UDP
+% ==============================================================
+% Este script permite controlar las siete articulaciones del robot Sawyer 
+% a través de gestos detectados por el sensor Leap Motion y enviados desde 
+% Python mediante comunicación UDP. 
+%
+% Cada gesto se asocia a una articulación específica, y el sistema actualiza 
+% las posiciones articulares dentro de límites definidos, mostrando en tiempo 
+% real el movimiento del robot y el valor de cada junta mediante sliders. 
+% El programa también permite mover manualmente las juntas con los sliders 
+% y actualiza el modelo 3D del robot en la misma figura.
+% ==============================================================
+
 clc; clear;
 
-% === ROBOT ===
-sawyer = cargar_sawyer();
-q = zeros(1,7);
+% --------------------------------------------------------------
+% CONFIGURACIÓN DEL ROBOT SAWYER
+% --------------------------------------------------------------
+sawyer = cargar_sawyer();       % Cargar modelo DH aproximado del Sawyer
+q = zeros(1,7);                 % Posición inicial de las 7 articulaciones
 
-% === LÍMITES Y REBOTE ===
-delta  = 0.2;                      % paso base
-qmin   = -pi*ones(1,7);            % límites inferiores (ajusta si tienes límites reales)
-qmax   =  pi*ones(1,7);            % límites superiores
-dstep  =  delta*ones(1,7);         % paso independiente por junta (se invierte al rebotar)
+% --------------------------------------------------------------
+% LÍMITES DE MOVIMIENTO Y PARÁMETROS DE REBOTE
+% --------------------------------------------------------------
+delta  = 0.2;                   % Paso de movimiento base
+qmin   = -pi*ones(1,7);         % Límite inferior por articulación
+qmax   =  pi*ones(1,7);         % Límite superior
+dstep  =  delta*ones(1,7);      % Paso independiente por junta (invierte signo al rebotar)
 
-% === FIGURA ÚNICA: ejes + panel de sliders ===
+% --------------------------------------------------------------
+% CONFIGURACIÓN DE INTERFAZ VISUAL (robot + sliders)
+% --------------------------------------------------------------
 f = figure('Name','Control por Gestos - Sawyer','Position',[100 100 1200 600], ...
            'Color','w','NumberTitle','off');
-% Panel para el robot (izquierda)
+
+% Panel del robot (lado izquierdo)
 ax = axes('Parent', f, 'Units','normalized', 'Position', [0.05 0.08 0.62 0.88]);
 view(ax, 45, 20); grid(ax, 'on'); box(ax, 'on');
 
-% Dibuja el robot en el mismo AXES
+% Dibuja el robot en los ejes
 axes(ax); %#ok<LAXES>
 sawyer.plot(q, 'workspace', [-1000 1000 -1000 1000 -100 1200], 'delay', 0);
 
-% Panel para sliders (derecha)
+% Panel de control (lado derecho)
 pnl = uipanel('Parent', f, 'Title','Juntas', 'FontWeight','bold', ...
               'Units','normalized', 'Position',[0.70 0.08 0.27 0.88]);
 
+% Creación de sliders y etiquetas
 sliders = gobjects(1,7);
 labels  = ["J1","J2","J3","J4","J5","J6","J7"];
 for i = 1:7
@@ -37,36 +60,44 @@ for i = 1:7
         'Callback', @(s,~) onSliderMove());
 end
 
-% === Parámetros de control de gestos ===
+% --------------------------------------------------------------
+% CONFIGURACIÓN DE GESTOS Y TEMPORIZACIÓN
+% --------------------------------------------------------------
 lastGesto    = "";
-minTiempo    = 0.05;  % Espera mínima entre gestos válidos
+minTiempo    = 0.05;  % Tiempo mínimo entre gestos válidos
 ultimoTiempo = tic;
 
-% === Comunicación UDP ===
+% --------------------------------------------------------------
+% CONFIGURACIÓN DE COMUNICACIÓN UDP
+% --------------------------------------------------------------
 u = udpport("datagram","IPV4","LocalPort",50011);
 disp("Esperando gestos desde Python...");
 
-% Cierre limpio
+% Limpieza al cerrar
 set(f, 'CloseRequestFcn', @(src,evt) onClose(src,evt,u));
 
-% Publicar en base para callbacks
+% Publicar variables en base (para accesibilidad en callbacks)
 assignin('base','sawyer', sawyer);
 assignin('base','q', q);
 assignin('base','qmin', qmin);
 assignin('base','qmax', qmax);
 
-% === Loop principal ===
+% --------------------------------------------------------------
+% BUCLE PRINCIPAL DE CONTROL
+% --------------------------------------------------------------
 while ishandle(f)
-    % Leer datagramas si hay
+    % Leer comandos si hay datos UDP disponibles
     if u.NumDatagramsAvailable > 0
         d = read(u, 1, "string");
         gesto = strtrim(d.Data);
 
+        % Procesa gesto si es nuevo o ha pasado tiempo mínimo
         if ~strcmpi(gesto, lastGesto) || toc(ultimoTiempo) > minTiempo
             disp("Gesto recibido: " + gesto);
             lastGesto = gesto;
             ultimoTiempo = tic;
 
+            % Mapeo de gestos a articulaciones
             switch lower(gesto)
                 case "cerrada",               [q,dstep] = stepBounce(q, dstep, 1, qmin, qmax, delta);
                 case "cerrada derecha",       [q,dstep] = stepBounce(q, dstep, 2, qmin, qmax, delta);
@@ -77,7 +108,7 @@ while ishandle(f)
                 case "derecha completa",      [q,dstep] = stepBounce(q, dstep, 7, qmin, qmax, delta);
             end
 
-            % Actualiza sliders y robot
+            % Actualiza sliders y visualización del robot
             for i = 1:7
                 sliders(i).Value = q(i);
             end
@@ -86,21 +117,24 @@ while ishandle(f)
             drawnow;
         end
     end
-    pause(0.01); % lectura más natural
+    pause(0.01); % Espera pequeña para lectura natural
 end
 
-% === Callbacks y funciones auxiliares ===
+% --------------------------------------------------------------
+% FUNCIONES AUXILIARES
+% --------------------------------------------------------------
+
 function onSliderMove()
-    % Si el usuario mueve cualquier slider, refleja en q y anima (clampeando a límites)
-    f = gcf; % figura actual
+    % Permite mover las articulaciones manualmente con los sliders
+    f = gcf; % Figura actual
     pnl = findobj(f, 'Type','uipanel', '-and', 'Title','Juntas');
     slds = findobj(pnl, 'Style','slider');
-    % Ordenar de J1 a J7 (posiciones verticales descendentes)
+    % Ordenar sliders verticalmente (de J1 a J7)
     [~, idx] = sort(arrayfun(@(h) h.Position(2), slds), 'descend');
     slds = slds(idx);
     qloc = zeros(1,7);
-    qmin = evalin('base','qmin'); %#ok<NASGU>
-    qmax = evalin('base','qmax'); %#ok<NASGU>
+    qmin = evalin('base','qmin');
+    qmax = evalin('base','qmax');
     for k = 1:7
         qloc(k) = min(slds(k).Max, max(slds(k).Min, slds(k).Value));
         slds(k).Value = qloc(k);
@@ -112,25 +146,25 @@ function onSliderMove()
 end
 
 function onClose(src, ~, u)
-    try, clear u; catch, end %#ok<CTCH>
+    % Cierre seguro del puerto UDP y ventana
+    try, clear u; catch, end
     delete(src);
 end
 
 function [q, dstep] = stepBounce(q, dstep, i, qmin, qmax, base_step)
-    % Avanza con el paso actual y rebota en límites cambiando el signo
+    % Incrementa la articulación i y rebota en límites invirtiendo la dirección
     q(i) = q(i) + dstep(i);
-
     if q(i) >= qmax(i)
         q(i)     = qmax(i);
-        dstep(i) = -abs(base_step); % rebote
+        dstep(i) = -abs(base_step); % Rebote negativo
     elseif q(i) <= qmin(i)
         q(i)     = qmin(i);
-        dstep(i) =  abs(base_step); % rebote
+        dstep(i) =  abs(base_step); % Rebote positivo
     end
 end
 
 function robot = cargar_sawyer()
-    % DH aproximado de Sawyer (unidades en mm)
+    % Definición del modelo DH aproximado del robot Sawyer (en mm)
     J1 = Revolute('d', 317,   'a', 81,   'alpha', -pi/2, 'offset', 0);
     J2 = Revolute('d', 192.5, 'a', 0,    'alpha', -pi/2, 'offset', -pi/2);
     J3 = Revolute('d', 400,   'a', 0,    'alpha', -pi/2, 'offset', 0);
@@ -140,4 +174,5 @@ function robot = cargar_sawyer()
     J7 = Revolute('d', 133.75,'a', 0,    'alpha', 0,     'offset', -pi/2);
     robot = SerialLink([J1 J2 J3 J4 J5 J6 J7], 'name', 'SAWYER');
 end
+
 
