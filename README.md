@@ -25,12 +25,12 @@ El sistema completo incluye:
 
 | Carpeta / Archivo | Descripción |
 |--------------------|-------------|
-| **esfera_virtual/** | Simulación 3D del movimiento de una agente virtual controlada mediante gestos en Matlab. |
-| **leapc-python-bindings-main/** | SDK adaptado del Leap Motion Gemini con ejemplos de control gestual para distintos robots. Incluye subcarpeta `examples/` con todos los scripts de integración de los códigos de Python. |
-| **mano_simulada/matlab/** | Scripts MATLAB para la simulación de la mano virtual. |
-| **pololu/** | Código MATLAB para controlar el robot Pololu 3Pi físico y su versión en Webots mediante comunicación UDP. |
-| **robot_sawyer/** | Simulación del robot Sawyer en MATLAB. |
-| **robotat_3pi_esp32_base/** | Código base para el agente Pololu con ESP32-S3. Incluye firmware y configuración de comunicación. |
+| **esfera_virtual** | Simulación 3D del movimiento de una agente virtual controlada mediante gestos en Matlab. |
+| **leapc-python-bindings-main** | SDK adaptado del Leap Motion Gemini con ejemplos de control gestual para distintos robots. Incluye subcarpeta `examples/` con todos los scripts de integración de los códigos de Python. |
+| **mano_simulada/matlab** | Scripts MATLAB para la simulación de la mano virtual. |
+| **pololu** | Código MATLAB para controlar el robot Pololu 3Pi físico y su versión en Webots mediante comunicación UDP. |
+| **robot_sawyer** | Simulación del robot Sawyer en MATLAB. |
+| **robotat_3pi_esp32_base** | Código base para el agente Pololu con ESP32-S3. Incluye firmware y configuración de comunicación. |
 | **final_animatronica_openCM.ino** | Firmware en C++ para la mano animatrónica en Robotis, que interpreta los comandos seriales enviados desde Python. |
 
 
